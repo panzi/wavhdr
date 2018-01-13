@@ -3,9 +3,6 @@ wavhdr
 
 Prepend WAV header to file. Saves result into a new file appending `.wav`.
 
-Currently this uses the Linux sendfile function for fast file copy without
-fallback for when the function isn't available.
-
 Usage
 -----
 

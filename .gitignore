@@ -1,4 +1,7 @@
 wavhdr
+wavhdr-linux32
 *.o
 *~
 .*
+*.zip
+*.exe

@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdio.h>
-#include <sys/sendfile.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -9,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <stdbool.h>
 
 #define PUT_BYTES(PTR, BYTES, SIZE) \
 	memcpy(PTR, BYTES, SIZE); \
@@ -28,6 +28,43 @@
 #define DEFAULT_CHANNELS 2
 #define DEFAULT_SAMPLE_RATE 44100
 #define DEFAULT_BITS_PER_SAMPLE 16
+#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+
+#ifdef __linux__
+#include <sys/sendfile.h>
+
+static bool copyfile(int out_fd, int in_fd, size_t count) {
+	size_t remaining = count;
+	while (remaining > 0) {
+		ssize_t written = sendfile(out_fd, in_fd, NULL, count);
+		if (written < 0) {
+			return false;
+		}
+		remaining -= written;
+	}
+	return true;
+}
+#else
+static bool copyfile(int out_fd, int in_fd, size_t count) {
+	char buf[BUFSIZ];
+	size_t remaining = count;
+
+	while (remaining > 0) {
+		size_t requested = MIN(sizeof(buf), remaining);
+		ssize_t rcount = read(in_fd, buf, requested);
+		if (rcount < 0) {
+			return false;
+		}
+		ssize_t wcount = write(out_fd, buf, rcount);
+		if (wcount < 0 || wcount < rcount || (size_t)rcount < requested) {
+			return false;
+		}
+		remaining -= rcount;
+	}
+
+	return true;
+}
+#endif
 
 static unsigned int to_full_byte(int bits) {
 	int rem = bits % 8;
@@ -117,7 +154,7 @@ int main(int argc, char *argv[]) {
 				perror(optarg);
 				goto error;
 			}
-			if (number <= 0 || number > UINT32_MAX) {
+			if (number <= 0 || (int64_t)number > UINT32_MAX) {
 				fprintf(stderr, "%s: Number out of range\n", optarg);
 				goto error;
 			}
@@ -214,7 +251,7 @@ int main(int argc, char *argv[]) {
 			goto error;
 		}
 
-		if (st.st_size > 0 && sendfile(fd_out, fd_in, NULL, st.st_size) != st.st_size) {
+		if (st.st_size > 0 && !copyfile(fd_out, fd_in, st.st_size)) {
 			perror(namebuf);
 			goto error;
 		}
